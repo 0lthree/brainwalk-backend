@@ -56,7 +56,7 @@
 
 
     <!--  카카오 아이디와 일치하는 멤버의 데이터를 가져옴  -->
-    <select id="findByKakaoId" resultMap="MemberResultMap" parameterType="string">
+    <select id="findByKakaoId" resultMap="MemberResultMap" parameterType="long">
         <include refid="selectMemberSql"/>
         WHERE kakao_id = #{kakaoId}
     </select>
@@ -104,6 +104,7 @@
     </select>
 
     <!-- findExistMemberPhone -->
+    <!-- 자기 자신이 입력한 전화번호는 제외 -->
     <select id="findExistMemberPhone" resultType="boolean">
         SELECT
             count(*)
@@ -127,10 +128,33 @@
         WHERE member_id = #{memberId}
     </update>
 
+    <!-- withdrawnMember -->
+    <update id="withdrawMember">
+        UPDATE member
+        SET user_status = 'WITHDRAWN',
+            role = 'WITHDRAWN',
+            deleted_at = NOW()
+        WHERE member_id = #{memberId}
+    </update>
+
+    <!-- recoveryMember -->
+    <update id="recoveryMember">
+        UPDATE member
+        SET user_status = 'ACTIVE',
+            role = 'USER',
+            deleted_at = null
+        WHERE member_id = #{memberId}
+    </update>
+
     <!--  incrementTotalRoutineCount  -->
     <update id="incrementTotalRoutineCount">
         UPDATE member
         SET total_routine_count = total_routine_count + 1
         WHERE member_id = #{memberId}
     </update>
+
+    <select id="findNameById" resultType="string">
+        SELECT name
+        FROM member  WHERE member_id = #{memberId}
+    </select>
 </mapper>

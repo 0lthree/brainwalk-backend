@@ -13,7 +13,7 @@ public class AdditionalInfoResponse {
     Long memberId;
 
     @JsonProperty("isProfileCompleted")
-    Boolean isProfileComplete;
+    Boolean isProfileCompleted;
 
     UserStatus userStatus;
 

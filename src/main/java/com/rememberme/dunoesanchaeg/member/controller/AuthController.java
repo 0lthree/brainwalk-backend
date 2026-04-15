@@ -2,12 +2,14 @@ package com.rememberme.dunoesanchaeg.member.controller;
 
 
 import com.rememberme.dunoesanchaeg.common.ApiResponse;
-import com.rememberme.dunoesanchaeg.common.exception.BaseException;
+import com.rememberme.dunoesanchaeg.common.security.CookieUtil;
+import com.rememberme.dunoesanchaeg.common.security.JwtProvider;
 import com.rememberme.dunoesanchaeg.member.dto.request.KakaoLoginRequest;
 import com.rememberme.dunoesanchaeg.member.dto.response.KakaoLoginResponse;
 import com.rememberme.dunoesanchaeg.member.dto.response.ReissueResponse;
 import com.rememberme.dunoesanchaeg.member.dto.response.TokenReissueResponse;
 import com.rememberme.dunoesanchaeg.member.service.AuthService;
+import com.rememberme.dunoesanchaeg.member.service.KakaoClient;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,23 +25,28 @@ import org.springframework.web.bind.annotation.*;
 @Slf4j
 public class AuthController {
     private final AuthService authService;
+    private final CookieUtil cookieUtil;
+    private final JwtProvider jwtProvider;
+    private final KakaoClient kakaoClient;
 
-    @PostMapping("/kakaoAuth")
+    @PostMapping("/kakao-auth")
     public ResponseEntity<ApiResponse<KakaoLoginResponse>> loginWithKakao(
             @RequestHeader("User-Agent") String userAgent,
             @Valid @RequestBody KakaoLoginRequest kakaoLoginRequest,
             HttpServletResponse response
     ){
-        KakaoLoginResponse kakaoLoginResponse = authService
-                .kakaoAuth(kakaoLoginRequest.getKakaoId(),kakaoLoginRequest.getEmail(), userAgent);
+        log.info("카카오 로그인 요청 수신 - 인가 코드 확인 완료");
 
-        ResponseCookie cookie = ResponseCookie.from("refreshToken", kakaoLoginResponse.getRefreshToken())
-                .httpOnly(true)
-                .secure(false)
-                .maxAge(14 * 24 * 60 * 60) //14일
-                .path("/")
-                .sameSite("Strict")
-                .build();
+        // 1. 컨트롤러에서 kakaoClient를 호출하지 않음
+        // 서비스가 code를 받아 내부에서 모든 통신을 처리
+        KakaoLoginResponse kakaoLoginResponse = authService
+                .kakaoAuth(kakaoLoginRequest.getCode(), userAgent);
+
+        // 2. 리프레시 토큰 쿠키 생성 (기존 로직 유지)
+        ResponseCookie cookie = cookieUtil.createRefreshTokenCookie(
+                kakaoLoginResponse.getRefreshToken(),
+                jwtProvider.getRefreshTokenStepSeconds()
+        );
 
         response.addHeader("Set-Cookie", cookie.toString());
 
@@ -48,25 +55,16 @@ public class AuthController {
 
     @PostMapping("/reissue") //
     public ResponseEntity<ApiResponse<ReissueResponse>> reissueToken(
-            @CookieValue("refreshToken") String refreshToken,
+            @CookieValue(value = "refreshToken", required = false) String refreshToken,
             @Valid @RequestHeader("User-Agent") String userAgent,
             HttpServletResponse response)
     {
-        if(refreshToken == null){
-            throw new BaseException(401,"세션이 만료되었거나 유효하지 않은 접근입니다.");
-        }
 
         // 토큰 재발급 및 검증
         TokenReissueResponse reissue = authService.reissue(refreshToken, userAgent);
 
         // 쿠키 생성
-        ResponseCookie cookie = ResponseCookie.from("refreshToken", reissue.getRefreshToken())
-                .httpOnly(true)
-                .secure(false)
-                .maxAge(14 * 24 * 60 * 60) //14일
-                .path("/")
-                .sameSite("Strict")
-                .build();
+        ResponseCookie cookie = cookieUtil.createRefreshTokenCookie(reissue.getRefreshToken(), jwtProvider.getRefreshTokenStepSeconds());
 
         // 쿠키 재설정
         response.addHeader("Set-Cookie", cookie.toString());
@@ -93,13 +91,7 @@ public class AuthController {
         if(result != 1){
             log.info("이미 로그아웃된 세션이거나 존재하지 않는 세션입니다. memberId: {}", memberId);
         }
-        ResponseCookie cookie = ResponseCookie.from("refreshToken", "")
-                .httpOnly(true)
-                .secure(false)
-                .maxAge(0) //즉시 만료
-                .path("/")
-                .sameSite("Strict")
-                .build();
+        ResponseCookie cookie = cookieUtil.deleteRefreshTokenCookie();
 
         // 쿠키 재설정
         response.addHeader("Set-Cookie", cookie.toString());
@@ -119,13 +111,7 @@ public class AuthController {
         }else{
             log.info("[전체 로그아웃 알림] 이미 로그아웃된 세션이거나 존재하지 않는 세션입니다. memberId: {}", memberId);
         }
-        ResponseCookie cookie = ResponseCookie.from("refreshToken", "")
-                .httpOnly(true)
-                .secure(false)
-                .maxAge(0) //즉시 만료
-                .path("/")
-                .sameSite("Strict")
-                .build();
+        ResponseCookie cookie = cookieUtil.deleteRefreshTokenCookie();
 
         // 쿠키 재설정
         response.addHeader("Set-Cookie", cookie.toString());

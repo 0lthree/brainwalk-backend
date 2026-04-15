@@ -1,30 +1,41 @@
 package com.rememberme.dunoesanchaeg.member.dto.response;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.rememberme.dunoesanchaeg.member.domain.enums.FontSize;
 import com.rememberme.dunoesanchaeg.member.domain.enums.UserStatus;
 import lombok.Builder;
 import lombok.Value;
+import java.time.LocalDateTime;
 
 @Builder
 @Value
-public class KakaoLoginResponse {
+public class UpdateMemberResponse {
     Long memberId;
 
     String name;
 
-    @JsonProperty("isProfileCompleted")
-    Boolean isProfileCompleted;
+    String email;
 
-    UserStatus userStatus;
+    String phone;
+
+    String birthDate;
+
+    Boolean guardianConsent;
+
+    String guardianEmail;
+
+    String guardianPhone;
+
     FontSize fontSize;
 
     @JsonProperty("isHighContrast")
     Boolean isHighContrast;
 
-    String accessToken;
+    UserStatus userStatus;
 
-    @JsonIgnore
-    String refreshToken;
+    @JsonProperty("isProfileCompleted")
+    Boolean isProfileCompleted;
+
+    LocalDateTime updatedAt;
+
 }

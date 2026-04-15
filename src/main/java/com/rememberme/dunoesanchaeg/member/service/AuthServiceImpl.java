@@ -6,6 +6,7 @@ import com.rememberme.dunoesanchaeg.member.domain.Member;
 import com.rememberme.dunoesanchaeg.member.domain.MemberToken;
 import com.rememberme.dunoesanchaeg.member.dto.response.KakaoLoginResponse;
 import com.rememberme.dunoesanchaeg.member.dto.response.TokenReissueResponse;
+import com.rememberme.dunoesanchaeg.member.dto.target.KakaoUserInfo;
 import com.rememberme.dunoesanchaeg.member.mapper.MemberMapper;
 import com.rememberme.dunoesanchaeg.member.mapper.MemberTokenMapper;
 import lombok.RequiredArgsConstructor;
@@ -29,13 +30,21 @@ public class AuthServiceImpl implements AuthService {
     private final MemberTokenMapper memberTokenMapper;
     private final JwtProvider jwtProvider;
     private final TokenManager tokenManager;
+    private final KakaoClient kakaoClient;
 
     @Override
-    public KakaoLoginResponse kakaoAuth(String kakaoId, String email, String userAgent) {
+    public KakaoLoginResponse kakaoAuth(String code, String userAgent) {
         int result;
+
+        // 카카오 로그인 후 받아오는 code에서 엑세스 토큰 추출
+        String kakaoAccessToken = kakaoClient.getKakaoAccessToken(code);
+        KakaoUserInfo kakaoUserInfo = kakaoClient.getKakaoUserInfo(kakaoAccessToken);
+        Long kakaoId = kakaoUserInfo.getKakaoId();
+        String email = kakaoUserInfo.getEmail();
+
         Member member = memberMapper.findByKakaoId(kakaoId);
         // 신규유저면 insertMember 아니면 기존유저
-        // 기존 유저에서 getUserStatus 가 WITHDRAWN이면 에러
+        // 기존 유저에서 getUserStatus 가 WITHDRAWN이면 회원 복구로직 OR 스케줄러로 삭제
         // 기존유저이면서 ACTIVE이면 updateLastLoginAt 갱신
         if (member == null) {
             if(email != null && memberMapper.findByEmail(email) != null){
@@ -57,10 +66,6 @@ public class AuthServiceImpl implements AuthService {
             member = newMember;
 
         } else {
-            if (member.getUserStatus() == WITHDRAWN) {
-                throw new BaseException(400, "탈퇴한 회원입니다. 30일 이내 복구 가능합니다.");
-            }
-
             // kakaoId는 같은데 email이 다른 경우
             if(email != null && !email.equals(member.getEmail())){
                 // 입력받은 이메일을 다른 사람이 사용하고 있는경우
@@ -75,19 +80,19 @@ public class AuthServiceImpl implements AuthService {
                 member.updateEmail(email);
             }
 
-            result = memberMapper.updateLastLoginAt(member.getMemberId());
-
-            if (result != 1) {
-                throw new BaseException(500, "마지막 로그인 갱신 실패");
-            }
         }
 
+        // 신규회원이든 기존 회원이든 로그인하면 마지막 로그인 시간 갱신
+        result = memberMapper.updateLastLoginAt(member.getMemberId());
+        if (result != 1) {
+            throw new BaseException(500, "마지막 로그인 갱신 실패");
+        }
 
         // JWT 토큰 로직 구현하면 변경해야함-------------------
         // 새 토큰 발행: 로그인이 성공했으므로 새로운 AccessToken과 RefreshToken을 생성
         String accessToken = jwtProvider.createAccessToken(member.getMemberId(),member.getRole());
         String refreshToken = jwtProvider.createRefreshToken(member.getMemberId(),member.getRole());
-        LocalDateTime expireDay = LocalDateTime.now().plusDays(14);
+        LocalDateTime expireDay = jwtProvider.getRefreshTokenExpire();
         //------------------------------------------------
 
         // 기존 세션 확인: findByMemberIdAndUserAgent로 "이 유저가 이 기기로 들어온 적이 있는지" 확인
@@ -101,8 +106,8 @@ public class AuthServiceImpl implements AuthService {
                     .userAgent(userAgent)
                     .expiresAt(expireDay)
                     .build();
-            result = memberTokenMapper.insertMemberToken(newMemberToken);
-            if (result != 1) {
+            result = memberTokenMapper.upsertMemberToken(newMemberToken);
+            if (result < 1) {
                 throw new BaseException(500, "유저 토큰 저장 실패");
             }
 
@@ -122,6 +127,7 @@ public class AuthServiceImpl implements AuthService {
 
         return KakaoLoginResponse.builder()
                 .memberId(member.getMemberId())
+                .name(member.getName())
                 .isProfileCompleted(member.isProfileCompleted())
                 .userStatus(member.getUserStatus())
                 .fontSize(member.getFontSize())
@@ -134,9 +140,15 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public TokenReissueResponse reissue(String refreshToken, String userAgent) {
         int result;
+
+        // 리프레시 토큰 자체가 안들어온 경우
+        if(refreshToken == null){
+            throw new BaseException(401, "세션이 만료되었거나 유효하지 않은 접근입니다.");
+        }
+
         MemberToken token = memberTokenMapper.findByRefreshToken(refreshToken);
 
-        // 토큰이 없는 경우
+        // 토큰이 DB없는 경우
         if(token == null){
             throw new BaseException(401,"유효하지 않은 접근입니다. 다시 로그인해주세요.");
         }
@@ -170,7 +182,6 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // 사용자가 WITHDRAWN인 경우
-        // --  현재 작성하고 있는 위치 --
         Member member = memberMapper.findByMemberId(token.getMemberId());
         if (member == null) {
             throw new BaseException(404, "사용자 정보를 찾을 수 없습니다.");
@@ -186,11 +197,13 @@ public class AuthServiceImpl implements AuthService {
         String newRefreshToken = jwtProvider.createRefreshToken(member.getMemberId(), member.getRole());
 
         //토큰객체에 넣어야함
-        token.setRefreshToken(newRefreshToken);
-        token.setExpiresAt(LocalDateTime.now().plusDays(14));
+        token = token.toBuilder()
+                .refreshToken(newRefreshToken)
+                .expiresAt(jwtProvider.getRefreshTokenExpire()).
+                build();
 
-        result = memberTokenMapper.updateMemberToken(token);
-        if (result != 1){
+        result = memberTokenMapper.upsertMemberToken(token);
+        if (result < 1){
             throw new BaseException(500,"토큰 수정 실패");
         }
 
@@ -199,6 +212,7 @@ public class AuthServiceImpl implements AuthService {
                 .builder()
                 .refreshToken(newRefreshToken)
                 .accessToken(newAccessToken)
+                .name(member.getName())
                 .userStatus(member.getUserStatus())
                 .isProfileCompleted(member.isProfileCompleted())
                 .build();
@@ -207,7 +221,14 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public int logout(Long memberId, String userAgent) {
         int result;
+        Member member = memberMapper.findByMemberId(memberId);
+        if (member == null) {
+            throw new BaseException(404, "존재하지 않는 회원입니다.");
+        }
+
         result = tokenManager.logoutTransactional(memberId, userAgent);
+
+        kakaoClient.logout(member.getKakaoId());
 
         return result;
     }
@@ -215,6 +236,14 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public int logoutAll(Long memberId) {
         int result;
+        Member member = memberMapper.findByMemberId(memberId);
+        if (member == null) {
+            throw new BaseException(404, "존재하지 않는 회원입니다.");
+        }
+
+        kakaoClient.logout(member.getKakaoId());
+
+        log.info("모든 유저 기기에서 로그아웃 - memberId: {}", memberId);
         result = tokenManager.logoutAllTransactional(memberId);
 
         return result;
