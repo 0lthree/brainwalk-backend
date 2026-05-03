@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         DOCKER_IMAGE = 'oithreed/dunoesanchaeg-backend'
-        DOCKER_CREDENTIALS_ID = 'dockerhub-access'
+        DOCKER_CREDENTIALS_ID = 'dunoesanchaeg-backend'
     }
 
     stages {
