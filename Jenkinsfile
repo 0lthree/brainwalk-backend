@@ -1,9 +1,35 @@
 pipeline {
-    agent any
+    agent {
+        kubernetes {
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: maven
+      image: maven:3.9.9-eclipse-temurin-21
+      command:
+        - cat
+      tty: true
+    - name: docker
+      image: docker:27-cli
+      command:
+        - cat
+      tty: true
+      volumeMounts:
+        - name: docker-sock
+          mountPath: /var/run/docker.sock
+  volumes:
+    - name: docker-sock
+      hostPath:
+        path: /var/run/docker.sock
+'''
+        }
+    }
 
     environment {
         DOCKER_IMAGE = 'oithreed/dunoesanchaeg-backend'
-        DOCKER_CREDENTIALS_ID = 'dunoesanchaeg-backend'
+        DOCKER_CREDENTIALS_ID = 'dockerhub-access'
     }
 
     stages {
@@ -15,28 +41,34 @@ pipeline {
 
         stage('Build Jar') {
             steps {
-                sh 'chmod +x mvnw'
-                sh './mvnw clean package -DskipTests'
+                container('maven') {
+                    sh 'mvn clean package -DskipTests'
+                }
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t $DOCKER_IMAGE:$BUILD_NUMBER .'
-                sh 'docker tag $DOCKER_IMAGE:$BUILD_NUMBER $DOCKER_IMAGE:latest'
+                container('docker') {
+                    sh 'docker version'
+                    sh 'docker build -t $DOCKER_IMAGE:$BUILD_NUMBER .'
+                    sh 'docker tag $DOCKER_IMAGE:$BUILD_NUMBER $DOCKER_IMAGE:latest'
+                }
             }
         }
 
         stage('Push Docker Image') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: DOCKER_CREDENTIALS_ID,
-                    usernameVariable: 'DOCKER_USERNAME',
-                    passwordVariable: 'DOCKER_PASSWORD'
-                )]) {
-                    sh 'echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin'
-                    sh 'docker push $DOCKER_IMAGE:$BUILD_NUMBER'
-                    sh 'docker push $DOCKER_IMAGE:latest'
+                container('docker') {
+                    withCredentials([usernamePassword(
+                        credentialsId: DOCKER_CREDENTIALS_ID,
+                        usernameVariable: 'DOCKER_USERNAME',
+                        passwordVariable: 'DOCKER_PASSWORD'
+                    )]) {
+                        sh 'echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin'
+                        sh 'docker push $DOCKER_IMAGE:$BUILD_NUMBER'
+                        sh 'docker push $DOCKER_IMAGE:latest'
+                    }
                 }
             }
         }
