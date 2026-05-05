@@ -73,10 +73,6 @@ spec:
             }
         }
 
-        stage('Push Docker Image') {
-            ...
-        }
-
         stage('Update Kubernetes Manifest') {
             steps {
                 script {
