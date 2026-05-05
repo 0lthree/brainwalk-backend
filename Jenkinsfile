@@ -72,5 +72,31 @@ spec:
                 }
             }
         }
+
+        stage('Push Docker Image') {
+            ...
+        }
+
+        stage('Update Kubernetes Manifest') {
+            steps {
+                script {
+                    def imageTag = "${BUILD_NUMBER}"
+
+                    sh """
+                    git clone https://github.com/0lthree/brainwalk-k8s-manifests.git
+                    cd brainwalk-k8s-manifests/backend
+
+                    sed -i 's|image: .*|image: oithreed/dunoesanchaeg-backend:${imageTag}|' deployment.yaml
+
+                    git config user.email "jenkins@local"
+                    git config user.name "jenkins"
+
+                    git add deployment.yaml
+                    git commit -m "Update backend image to ${imageTag}"
+                    git push
+                    """
+                }
+            }
+        }
     }
 }
