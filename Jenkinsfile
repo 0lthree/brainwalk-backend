@@ -78,19 +78,27 @@ spec:
                 script {
                     def imageTag = "${BUILD_NUMBER}"
 
-                    sh """
-                    git clone https://github.com/0lthree/brainwalk-k8s-manifests.git
-                    cd brainwalk-k8s-manifests/backend
+                    withCredentials([usernamePassword(
+                        credentialsId: 'github-access',
+                        usernameVariable: 'GITHUB_USERNAME',
+                        passwordVariable: 'GITHUB_TOKEN'
+                    )]) {
+                        sh """
+                        rm -rf brainwalk-k8s-manifests
 
-                    sed -i 's|image: .*|image: oithreed/dunoesanchaeg-backend:${imageTag}|' deployment.yaml
+                        git clone https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/0lthree/brainwalk-k8s-manifests.git
+                        cd brainwalk-k8s-manifests/backend
 
-                    git config user.email "jenkins@local"
-                    git config user.name "jenkins"
+                        sed -i 's|image: .*|image: oithreed/dunoesanchaeg-backend:${imageTag}|' deployment.yaml
 
-                    git add deployment.yaml
-                    git commit -m "Update backend image to ${imageTag}"
-                    git push
-                    """
+                        git config user.email "jenkins@local"
+                        git config user.name "jenkins"
+
+                        git add deployment.yaml
+                        git commit -m "Update backend image to ${imageTag}"
+                        git push
+                        """
+                    }
                 }
             }
         }
