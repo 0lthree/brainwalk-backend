@@ -1,13 +1,4 @@
 spring:
-  cloud:
-    aws:
-      region:
-        static: ap-northeast-2 # 필수: 파라미터 스토어 접근을 위한 '열쇠' 위치
-  config:
-    import: "aws-parameterstore:/config/brainwalk/" # 이미 경로를 잘 지정하셨습니다.
-    activate:
-      on-profile: prod
-
   jpa:
     hibernate:
       ddl-auto: none # 운영 DB는 절대 건드리지 않음
@@ -48,13 +39,13 @@ springdoc:
   swagger-ui:
     enabled: false
 
-# 1. 전체적인 로그 레벨 제어 (Spring, Library 등)
+# 전체적인 로그 레벨 제어 (Spring, Library 등)
 logging:
   level:
     root: warn
     com.rememberme.dunoesanchaeg: info # 우리 서비스의 주요 흐름만 기록
 
-# 2. MyBatis SQL 로그 생성 자체를 차단 (이중 보안)
+# MyBatis SQL 로그 생성 자체를 차단 (이중 보안)
 mybatis:
   configuration:
     map-underscore-to-camel-case: true

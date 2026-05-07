@@ -29,8 +29,8 @@ spring:
 
 mybatis:
   # 패키지 경로는 프로젝트 구조에 맞춰 수정 가능
-  type-aliases-package: com.rememberme.dunoesanchaeg.*.model.vo
-  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.rememberme.dunoesanchaeg..model.vo
+  mapper-locations: classpath:mapper/**/.xml
   configuration:
     jdbc-type-for-null: 'NULL'
     map-underscore-to-camel-case: true
